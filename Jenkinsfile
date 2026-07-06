@@ -46,7 +46,7 @@ spec:
 
   environment {
     GHCR_REGISTRY  = "ghcr.io"
-    GITHUB_USER    = "YOUR_GITHUB_USERNAME"
+    GITHUB_USER    = "kanuparthikishore"
     IMAGE_NAME     = "fastapi-app"
     IMAGE_TAG      = "${env.GIT_COMMIT[0..7]}"
     FULL_IMAGE     = "${GHCR_REGISTRY}/${GITHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}"

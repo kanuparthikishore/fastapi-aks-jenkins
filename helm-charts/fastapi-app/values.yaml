@@ -1,7 +1,7 @@
 replicaCount: 2
 
 image:
-  repository: ghcr.io/YOUR_GITHUB_USERNAME/fastapi-app
+  repository: ghcr.io/kanuparthikishore/fastapi-app
   tag: latest
   pullPolicy: Always
 
