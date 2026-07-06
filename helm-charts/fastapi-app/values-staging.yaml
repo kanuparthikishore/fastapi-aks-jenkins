@@ -1,0 +1,17 @@
+replicaCount: 1
+
+ingress:
+  host: fastapi-staging.local
+
+hpa:
+  minReplicas: 1
+  maxReplicas: 3
+  cpuThreshold: 70
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 300m
+    memory: 256Mi

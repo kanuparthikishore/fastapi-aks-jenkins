@@ -1,0 +1,17 @@
+replicaCount: 2
+
+ingress:
+  host: fastapi-prod.local
+
+hpa:
+  minReplicas: 2
+  maxReplicas: 10
+  cpuThreshold: 60
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

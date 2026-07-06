@@ -1,0 +1,6 @@
+apiVersion: v2
+name: fastapi-app
+description: FastAPI application Helm chart for AKS Jenkins project
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
