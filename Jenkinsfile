@@ -163,15 +163,20 @@ spec:
             kubectl rollout status deployment/fastapi-staging \
               -n $STAGING_NS --timeout=120s
 
+            echo "--- Port-forward test ---"
             kubectl port-forward svc/fastapi-staging-svc \
               18000:8000 -n $STAGING_NS &
             PF_PID=$!
-            sleep 10
+            sleep 15
 
-            curl -f http://localhost:18000/health
+            echo "--- Health check ---"
+            wget -qO- http://localhost:18000/health
+            echo ""
             echo "Health: PASSED"
 
-            curl -f http://localhost:18000/api/items
+            echo "--- Items check ---"
+            wget -qO- http://localhost:18000/api/items
+            echo ""
             echo "Items: PASSED"
 
             kill $PF_PID || true
