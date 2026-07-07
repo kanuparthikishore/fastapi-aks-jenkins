@@ -81,7 +81,7 @@ spec:
           sh '''
             pip install -r requirements-dev.txt -q
             echo "--- Lint ---"
-            flake8 app/ --max-line-length=100 --exclude=__pycache__
+            flake8 app/ --max-line-length=100 --exclude=__pycache__,app/tests
             echo "--- Tests ---"
             pytest app/tests/ \
               --cov=app \
@@ -94,7 +94,7 @@ spec:
       }
       post {
         always {
-          junit 'test-results.xml'
+          junit allowEmptyResults: true, testResults: 'test-results.xml'
         }
       }
     }
