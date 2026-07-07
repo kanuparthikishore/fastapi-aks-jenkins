@@ -34,28 +34,18 @@ spec:
       limits:
         cpu: 500m
         memory: 512Mi
-  - name: helm
-    image: alpine/helm:3.14.4
-    command: [sleep, infinity]
-    resources:
-      requests:
-        cpu: 50m
-        memory: 64Mi
-      limits:
-        cpu: 200m
-        memory: 128Mi
-  - name: kubectl
-    image: bitnami/kubectl:1.29.14
+  - name: tools
+    image: alpine/k8s:1.29.9
     command: [sleep, infinity]
     securityContext:
       runAsUser: 0
     resources:
       requests:
-        cpu: 50m
-        memory: 64Mi
-      limits:
-        cpu: 200m
+        cpu: 100m
         memory: 128Mi
+      limits:
+        cpu: 400m
+        memory: 256Mi
 """
     }
   }
@@ -81,7 +71,7 @@ spec:
           ).trim()
           env.FULL_IMAGE = "${env.GHCR_REGISTRY}/${env.GITHUB_USER}/${env.IMAGE_NAME}:${env.IMAGE_TAG}"
         }
-        echo "Building commit: ${env.IMAGE_TAG} on branch: ${env.GIT_BRANCH}"
+        echo "Building: ${env.FULL_IMAGE}"
       }
     }
 
@@ -114,9 +104,9 @@ spec:
         container('python') {
           sh '''
             pip install bandit pip-audit -q
-            echo "--- SAST: Bandit ---"
+            echo "--- Bandit SAST ---"
             bandit -r app/ --severity-level medium || true
-            echo "--- Dependency audit ---"
+            echo "--- pip-audit ---"
             pip-audit -r requirements.txt || true
           '''
         }
@@ -128,18 +118,13 @@ spec:
         container('docker') {
           withCredentials([string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')]) {
             sh '''
-              echo "--- Docker login ---"
               echo $GITHUB_TOKEN | docker login ghcr.io \
                 -u $GITHUB_USER --password-stdin
 
-              echo "--- Build image ---"
               docker build -t $FULL_IMAGE .
-
-              echo "--- Tag as latest ---"
               docker tag $FULL_IMAGE \
                 ${GHCR_REGISTRY}/${GITHUB_USER}/${IMAGE_NAME}:latest
 
-              echo "--- Push ---"
               docker push $FULL_IMAGE
               docker push ${GHCR_REGISTRY}/${GITHUB_USER}/${IMAGE_NAME}:latest
               echo "Pushed: $FULL_IMAGE"
@@ -151,8 +136,12 @@ spec:
 
     stage('Deploy to staging') {
       steps {
-        container('helm') {
+        container('tools') {
           sh '''
+            echo "--- Verify tools ---"
+            helm version --short
+            kubectl version --client
+
             echo "--- Deploy staging ---"
             helm upgrade --install fastapi-staging $HELM_CHART \
               --namespace $STAGING_NS \
@@ -169,12 +158,11 @@ spec:
 
     stage('Smoke test staging') {
       steps {
-        container('kubectl') {
+        container('tools') {
           sh '''
             kubectl rollout status deployment/fastapi-staging \
               -n $STAGING_NS --timeout=120s
 
-            echo "--- Port-forward test ---"
             kubectl port-forward svc/fastapi-staging-svc \
               18000:8000 -n $STAGING_NS &
             PF_PID=$!
@@ -202,7 +190,7 @@ spec:
 
     stage('Deploy to production') {
       steps {
-        container('helm') {
+        container('tools') {
           sh '''
             helm upgrade --install fastapi-prod $HELM_CHART \
               --namespace $PROD_NS \
@@ -219,7 +207,7 @@ spec:
 
     stage('Verify production') {
       steps {
-        container('kubectl') {
+        container('tools') {
           sh '''
             kubectl rollout status deployment/fastapi-prod \
               -n $PROD_NS --timeout=120s
@@ -227,7 +215,7 @@ spec:
             kubectl get svc     -n $PROD_NS
             kubectl get hpa     -n $PROD_NS
             kubectl get ingress -n $PROD_NS
-            echo "Production verification PASSED"
+            echo "Production VERIFIED"
           '''
         }
       }
@@ -237,11 +225,11 @@ spec:
 
   post {
     success {
-      echo "Pipeline SUCCESS"
+      echo "Pipeline SUCCESS — image: ${env.FULL_IMAGE}"
     }
     failure {
-      echo "Pipeline FAILED — initiating Helm rollback"
-      container('helm') {
+      echo "Pipeline FAILED"
+      container('tools') {
         sh 'helm rollback fastapi-prod -n $PROD_NS || true'
       }
     }
