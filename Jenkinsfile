@@ -15,10 +15,13 @@ spec:
     command: [sleep, infinity]
     resources:
       requests:
-        cpu: 200m
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 300m
         memory: 256Mi
   - name: docker
-    image: docker:24-dind
+    image: docker:24.0-dind
     securityContext:
       privileged: true
     env:
@@ -26,33 +29,44 @@ spec:
       value: ""
     resources:
       requests:
-        cpu: 300m
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 500m
         memory: 512Mi
   - name: helm
-    image: alpine/helm:3.15.0
+    image: alpine/helm:3.14.4
     command: [sleep, infinity]
     resources:
       requests:
-        cpu: 100m
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
         memory: 128Mi
   - name: kubectl
-    image: bitnami/kubectl:1.29
+    image: bitnami/kubectl:1.29.14
     command: [sleep, infinity]
     securityContext:
       runAsUser: 0
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
 """
     }
   }
 
   environment {
-    GHCR_REGISTRY  = "ghcr.io"
-    GITHUB_USER    = "kanuparthikishore"
-    IMAGE_NAME     = "fastapi-app"
-    IMAGE_TAG      = "${env.GIT_COMMIT[0..7]}"
-    FULL_IMAGE     = "${GHCR_REGISTRY}/${GITHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
-    STAGING_NS     = "fastapi-staging"
-    PROD_NS        = "fastapi-prod"
-    HELM_CHART     = "./helm-charts/fastapi-app"
+    GHCR_REGISTRY = "ghcr.io"
+    GITHUB_USER   = "kanuparthikishore"
+    IMAGE_NAME    = "fastapi-app"
+    STAGING_NS    = "fastapi-staging"
+    PROD_NS       = "fastapi-prod"
+    HELM_CHART    = "./helm-charts/fastapi-app"
   }
 
   stages {
@@ -60,7 +74,14 @@ spec:
     stage('Checkout') {
       steps {
         checkout scm
-        echo "Building commit: ${env.GIT_COMMIT[0..7]} on branch: ${env.GIT_BRANCH}"
+        script {
+          env.IMAGE_TAG = sh(
+            script: "git rev-parse --short HEAD",
+            returnStdout: true
+          ).trim()
+          env.FULL_IMAGE = "${env.GHCR_REGISTRY}/${env.GITHUB_USER}/${env.IMAGE_NAME}:${env.IMAGE_TAG}"
+        }
+        echo "Building commit: ${env.IMAGE_TAG} on branch: ${env.GIT_BRANCH}"
       }
     }
 
@@ -94,7 +115,6 @@ spec:
           sh '''
             pip install bandit pip-audit -q
             echo "--- SAST: Bandit ---"
-            bandit -r app/ -f json -o bandit-report.json || true
             bandit -r app/ --severity-level medium || true
             echo "--- Dependency audit ---"
             pip-audit -r requirements.txt || true
@@ -108,7 +128,7 @@ spec:
         container('docker') {
           withCredentials([string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')]) {
             sh '''
-              echo "--- Docker login to GHCR ---"
+              echo "--- Docker login ---"
               echo $GITHUB_TOKEN | docker login ghcr.io \
                 -u $GITHUB_USER --password-stdin
 
@@ -119,13 +139,10 @@ spec:
               docker tag $FULL_IMAGE \
                 ${GHCR_REGISTRY}/${GITHUB_USER}/${IMAGE_NAME}:latest
 
-              echo "--- Push SHA tag ---"
+              echo "--- Push ---"
               docker push $FULL_IMAGE
-
-              echo "--- Push latest tag ---"
               docker push ${GHCR_REGISTRY}/${GITHUB_USER}/${IMAGE_NAME}:latest
-
-              echo "Image pushed: $FULL_IMAGE"
+              echo "Pushed: $FULL_IMAGE"
             '''
           }
         }
@@ -136,7 +153,7 @@ spec:
       steps {
         container('helm') {
           sh '''
-            echo "--- Deploy to staging namespace ---"
+            echo "--- Deploy staging ---"
             helm upgrade --install fastapi-staging $HELM_CHART \
               --namespace $STAGING_NS \
               --values $HELM_CHART/values-staging.yaml \
@@ -145,7 +162,6 @@ spec:
               --wait \
               --timeout 5m \
               --atomic
-            echo "Staging deploy complete"
           '''
         }
       }
@@ -155,32 +171,22 @@ spec:
       steps {
         container('kubectl') {
           sh '''
-            echo "--- Waiting for pods to be ready ---"
             kubectl rollout status deployment/fastapi-staging \
               -n $STAGING_NS --timeout=120s
 
-            echo "--- Getting staging service IP ---"
-            sleep 15
-            CLUSTER_IP=$(kubectl get svc fastapi-staging-svc \
-              -n $STAGING_NS \
-              -o jsonpath='{.spec.clusterIP}')
-
-            echo "Staging ClusterIP: $CLUSTER_IP"
-
-            echo "--- Running smoke tests via port-forward ---"
+            echo "--- Port-forward test ---"
             kubectl port-forward svc/fastapi-staging-svc \
               18000:8000 -n $STAGING_NS &
             PF_PID=$!
-            sleep 5
+            sleep 10
 
             curl -f http://localhost:18000/health
-            echo "Health check PASSED"
+            echo "Health: PASSED"
 
             curl -f http://localhost:18000/api/items
-            echo "Items endpoint PASSED"
+            echo "Items: PASSED"
 
             kill $PF_PID || true
-            echo "Smoke tests PASSED"
           '''
         }
       }
@@ -189,11 +195,8 @@ spec:
     stage('Approval gate') {
       steps {
         timeout(time: 4, unit: 'HOURS') {
-          input message: 'Deploy to production?',
-                ok: 'Approve and Deploy',
-                submitterParameter: 'APPROVER'
+          input message: 'Deploy to production?', ok: 'Approve and Deploy'
         }
-        echo "Approved by: ${env.APPROVER}"
       }
     }
 
@@ -201,7 +204,6 @@ spec:
       steps {
         container('helm') {
           sh '''
-            echo "--- Deploy to production namespace ---"
             helm upgrade --install fastapi-prod $HELM_CHART \
               --namespace $PROD_NS \
               --values $HELM_CHART/values-prod.yaml \
@@ -210,7 +212,6 @@ spec:
               --wait \
               --timeout 5m \
               --atomic
-            echo "Production deploy complete"
           '''
         }
       }
@@ -222,12 +223,10 @@ spec:
           sh '''
             kubectl rollout status deployment/fastapi-prod \
               -n $PROD_NS --timeout=120s
-
-            kubectl get pods -n $PROD_NS
-            kubectl get svc  -n $PROD_NS
-            kubectl get hpa  -n $PROD_NS
+            kubectl get pods    -n $PROD_NS
+            kubectl get svc     -n $PROD_NS
+            kubectl get hpa     -n $PROD_NS
             kubectl get ingress -n $PROD_NS
-
             echo "Production verification PASSED"
           '''
         }
@@ -238,20 +237,16 @@ spec:
 
   post {
     success {
-      echo "Pipeline SUCCESS — image: ${env.FULL_IMAGE}"
+      echo "Pipeline SUCCESS"
     }
     failure {
-      echo "Pipeline FAILED — triggering Helm rollback"
+      echo "Pipeline FAILED — initiating Helm rollback"
       container('helm') {
-        sh '''
-          helm rollback fastapi-prod 0 \
-            --namespace $PROD_NS || true
-          echo "Rollback attempted"
-        '''
+        sh 'helm rollback fastapi-prod -n $PROD_NS || true'
       }
     }
     always {
-      echo "Pipeline finished — branch: ${env.GIT_BRANCH}, commit: ${env.GIT_COMMIT[0..7]}"
+      echo "Pipeline finished — branch: ${env.GIT_BRANCH}"
     }
   }
 }
