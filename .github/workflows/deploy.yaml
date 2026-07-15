@@ -9,6 +9,11 @@ on:
 
     branches: [ main ]
 
+permissions:
+  contents: read
+  packages: write
+
+
 jobs:
 
   build-and-deploy:
