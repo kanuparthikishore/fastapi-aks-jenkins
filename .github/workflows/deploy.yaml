@@ -4,7 +4,7 @@ on:
 
 
 
-    
+
   push:
 
     branches: [ main ]
@@ -54,11 +54,3 @@ jobs:
           kubectl set image deployment/fastapi-manual fastapi-manual=ghcr.io/kanuparthikishore/fastapi-manual:${{ github.sha }}
 
           kubectl rollout status deployment/fastapi-manual
-
-You'll need Docker installed on cp1 for the build step:
-
-sudo apt-get install -y docker.io
-
-sudo usermod -aG docker $USER
-
-newgrp docker
