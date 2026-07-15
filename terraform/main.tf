@@ -7,7 +7,7 @@ terraform {
   }
   backend "azurerm" {
     resource_group_name  = "tfstate-rg"
-    storage_account_name = "REPLACE_WITH_YOUR_STORAGE_ACCOUNT"
+    storage_account_name = "tfstateflaskdevops24553"
     container_name       = "tfstate"
     key                  = "fastapi-aks-jenkins.tfstate"
   }
@@ -27,13 +27,13 @@ resource "azurerm_kubernetes_cluster" "main" {
   location            = var.location
   resource_group_name = azurerm_resource_group.main.name
   dns_prefix          = var.cluster_name
-  kubernetes_version  = "1.29"
+  kubernetes_version  = "1.34"
 
   default_node_pool {
-    name                = "system"
-    node_count          = 2
-    vm_size             = "Standard_B2s"
-    os_disk_size_gb     = 30
+    name            = "system"
+    node_count      = 1
+    vm_size         = "Standard_D2s_v7"
+    os_disk_size_gb = 30
   }
 
   identity {
